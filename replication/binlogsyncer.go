@@ -21,7 +21,13 @@ import (
 	"github.com/go-mysql-org/go-mysql/utils"
 )
 
-var errSyncRunning = errors.New("Sync is running, must Close first")
+var (
+	errSyncRunning = errors.New("Sync is running, must Close first")
+
+	// DialerConnectTimeout is the timeout for dialing a connection to the MySQL
+	// server.
+	DialerConnectTimeout = time.Second * 10
+)
 
 // BinlogSyncerConfig is the configuration for BinlogSyncer.
 type BinlogSyncerConfig struct {
@@ -998,7 +1004,7 @@ func (b *BinlogSyncer) newConnection(ctx context.Context) (*client.Conn, error) 
 		addr = b.cfg.Host
 	}
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Second*10)
+	timeoutCtx, cancel := context.WithTimeout(ctx, DialerConnectTimeout)
 	defer cancel()
 
 	return client.ConnectWithDialer(timeoutCtx, "", addr, b.cfg.User, b.cfg.Password,
