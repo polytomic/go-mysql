@@ -146,6 +146,42 @@ type BinlogSyncerConfig struct {
 	SynchronousEventHandler EventHandler
 }
 
+// LogValue implements slog.LogValuer to provide safe logging of BinlogSyncerConfig.
+// It omits function fields, Logger (to avoid circular logging), and sensitive values.
+func (cfg BinlogSyncerConfig) LogValue() slog.Value {
+	attrs := []slog.Attr{
+		slog.Uint64("ServerID", uint64(cfg.ServerID)),
+		slog.String("Flavor", cfg.Flavor),
+		slog.String("Host", cfg.Host),
+		slog.Uint64("Port", uint64(cfg.Port)),
+		slog.String("User", cfg.User),
+		slog.String("Localhost", cfg.Localhost),
+		slog.String("Charset", cfg.Charset),
+		slog.Bool("SemiSyncEnabled", cfg.SemiSyncEnabled),
+		slog.Bool("RawModeEnabled", cfg.RawModeEnabled),
+		slog.Bool("TLSEnabled", cfg.TLSConfig != nil),
+		slog.Bool("ParseTime", cfg.ParseTime),
+		slog.Bool("UseDecimal", cfg.UseDecimal),
+		slog.Bool("UseFloatWithTrailingZero", cfg.UseFloatWithTrailingZero),
+		slog.Int("RecvBufferSize", cfg.RecvBufferSize),
+		slog.Duration("HeartbeatPeriod", cfg.HeartbeatPeriod),
+		slog.Duration("ReadTimeout", cfg.ReadTimeout),
+		slog.Int("MaxReconnectAttempts", cfg.MaxReconnectAttempts),
+		slog.Bool("DisableRetrySync", cfg.DisableRetrySync),
+		slog.Bool("VerifyChecksum", cfg.VerifyChecksum),
+		slog.Uint64("DumpCommandFlag", uint64(cfg.DumpCommandFlag)),
+		slog.Bool("DiscardGTIDSet", cfg.DiscardGTIDSet),
+		slog.Int("EventCacheCount", cfg.EventCacheCount),
+		slog.Bool("FillZeroLogPos", cfg.FillZeroLogPos),
+	}
+
+	if cfg.TimestampStringLocation != nil {
+		attrs = append(attrs, slog.String("TimestampStringLocation", cfg.TimestampStringLocation.String()))
+	}
+
+	return slog.GroupValue(attrs...)
+}
+
 // EventHandler defines the interface for processing binlog events.
 type EventHandler interface {
 	HandleEvent(e *BinlogEvent) error
@@ -197,11 +233,7 @@ func NewBinlogSyncer(cfg BinlogSyncerConfig) *BinlogSyncer {
 		cfg.EventCacheCount = 10240
 	}
 
-	// Clear the Password to avoid outputting it in logs.
-	pass := cfg.Password
-	cfg.Password = ""
 	cfg.Logger.Info("create BinlogSyncer", slog.Any("config", cfg))
-	cfg.Password = pass
 
 	b := new(BinlogSyncer)
 
