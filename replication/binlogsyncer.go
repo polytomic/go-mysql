@@ -98,6 +98,10 @@ type BinlogSyncerConfig struct {
 	// this configuration will not work if DisableRetrySync is true
 	MaxReconnectAttempts int
 
+	// RetryDelay is the delay between retry attempts when re-establishing a broken connection.
+	// Default 1s.
+	RetryDelay time.Duration
+
 	// whether disable re-sync for broken connection
 	DisableRetrySync bool
 
@@ -171,6 +175,7 @@ func (cfg BinlogSyncerConfig) LogValue() slog.Value {
 		slog.Duration("HeartbeatPeriod", cfg.HeartbeatPeriod),
 		slog.Duration("ReadTimeout", cfg.ReadTimeout),
 		slog.Int("MaxReconnectAttempts", cfg.MaxReconnectAttempts),
+		slog.Duration("RetryDelay", cfg.RetryDelay),
 		slog.Bool("DisableRetrySync", cfg.DisableRetrySync),
 		slog.Bool("VerifyChecksum", cfg.VerifyChecksum),
 		slog.Uint64("DumpCommandFlag", uint64(cfg.DumpCommandFlag)),
@@ -235,6 +240,9 @@ func NewBinlogSyncer(cfg BinlogSyncerConfig) *BinlogSyncer {
 	}
 	if cfg.EventCacheCount == 0 {
 		cfg.EventCacheCount = 10240
+	}
+	if cfg.RetryDelay == 0 {
+		cfg.RetryDelay = time.Second
 	}
 
 	cfg.Logger.Info("create BinlogSyncer", slog.Any("config", cfg))
@@ -828,7 +836,7 @@ func (b *BinlogSyncer) onStream(s *BinlogStreamer) {
 				case <-b.ctx.Done():
 					s.close()
 					return
-				case <-time.After(time.Second):
+				case <-time.After(b.cfg.RetryDelay):
 					b.retryCount++
 					if err = b.retrySync(); err != nil {
 						if b.cfg.MaxReconnectAttempts > 0 && b.retryCount >= b.cfg.MaxReconnectAttempts {
@@ -841,8 +849,9 @@ func (b *BinlogSyncer) onStream(s *BinlogStreamer) {
 						}
 
 						b.cfg.Logger.Error(
-							"retry sync err, wait 1s and retry again",
+							"retry sync err, retrying",
 							slog.Any("error", err), slog.Int("retryCount", b.retryCount), slog.Int("maxAttempts", b.cfg.MaxReconnectAttempts),
+							slog.Duration("retryDelay", b.cfg.RetryDelay),
 						)
 						continue
 					}
