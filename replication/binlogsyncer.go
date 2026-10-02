@@ -1158,9 +1158,11 @@ func (b *BinlogSyncer) newConnection(ctx context.Context) (*client.Conn, error) 
 func (b *BinlogSyncer) killConnection(conn *client.Conn, id uint32) {
 	cmd := fmt.Sprintf("KILL %d", id)
 	if _, err := conn.Execute(cmd); err != nil {
-		b.cfg.Logger.Error("kill connection", slog.Any("error", err), slog.Int64("id", int64(id)))
-		// Unknown thread id
-		if code := mysql.ErrorCode(err.Error()); code != mysql.ER_NO_SUCH_THREAD {
+		// Unknown thread id: the server already dropped the connection.
+		if code := mysql.ErrorCode(err.Error()); code == mysql.ER_NO_SUCH_THREAD {
+			b.cfg.Logger.Info("kill connection", slog.Any("error", err), slog.Int64("id", int64(id)))
+		} else {
+			b.cfg.Logger.Error("kill connection", slog.Any("error", err), slog.Int64("id", int64(id)))
 			b.cfg.Logger.Error(errors.Trace(err).Error())
 		}
 	}

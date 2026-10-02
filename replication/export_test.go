@@ -11,3 +11,8 @@ import (
 func (b *BinlogSyncer) NewConnection(ctx context.Context) (*client.Conn, error) {
 	return b.newConnection(ctx)
 }
+
+// KillConnection exposes killConnection to tests outside the package.
+func (b *BinlogSyncer) KillConnection(conn *client.Conn, id uint32) {
+	b.killConnection(conn, id)
+}
