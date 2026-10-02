@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-mysql-org/go-mysql/client"
@@ -146,4 +147,35 @@ func TestHandleEventAndACKPayloadInnerGSet(t *testing.T) {
 	require.NoError(t, b.handleEventAndACK(NewBinlogStreamer(), ev, false))
 	require.Equal(t, gset.String(), innerQuery.Event.(*QueryEvent).GSet.String())
 	require.Equal(t, gset.String(), innerXID.Event.(*XIDEvent).GSet.String())
+}
+
+// TestHandleEventAndACKTaggedThenUntaggedGTID verifies a tagged transaction
+// keeps its tag when the next, untagged, transaction folds it into the set
+// used to resume after a reconnect
+func TestHandleEventAndACKTaggedThenUntaggedGTID(t *testing.T) {
+	b := NewBinlogSyncer(BinlogSyncerConfig{ServerID: 1})
+	defer b.Close()
+
+	const sid = "de278ad0-2106-11e4-9f8e-6edd0ca20947"
+	u := uuid.MustParse(sid)
+
+	gset, err := mysql.ParseGTIDSet(mysql.MySQLFlavor, sid+":1-10")
+	require.NoError(t, err)
+	b.prevGset = gset
+
+	events := []Event{
+		&GtidTaggedLogEvent{GTIDEvent{SID: u[:], GNO: 12, Tag: mysql.NewTag("blue")}},
+		&GTIDEvent{SID: u[:], GNO: 11},
+	}
+	for _, ev := range events {
+		require.NoError(t, b.handleEventAndACK(NewBinlogStreamer(), &BinlogEvent{Header: &EventHeader{}, Event: ev}, false))
+	}
+
+	wantPrev, err := mysql.ParseGTIDSet(mysql.MySQLFlavor, sid+":1-10:blue:12")
+	require.NoError(t, err)
+	require.True(t, wantPrev.Equal(b.prevGset), "reconnect set: %s", b.prevGset)
+
+	wantCurr, err := mysql.ParseGTIDSet(mysql.MySQLFlavor, sid+":1-11:blue:12")
+	require.NoError(t, err)
+	require.True(t, wantCurr.Equal(b.currGset), "current set: %s", b.currGset)
 }
