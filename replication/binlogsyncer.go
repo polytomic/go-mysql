@@ -44,6 +44,9 @@ type BinlogSyncerConfig struct {
 	User string
 	// Password is for MySQL password.
 	Password string
+	// PasswordFunc, when set, supplies the password for each new connection in
+	// place of Password. Use it for credentials that expire.
+	PasswordFunc func(context.Context) (string, error)
 
 	// Localhost is local hostname if register salve.
 	// If not set, use os.Hostname() instead.
@@ -1133,7 +1136,15 @@ func (b *BinlogSyncer) newConnection(ctx context.Context) (*client.Conn, error) 
 	timeoutCtx, cancel := context.WithTimeout(ctx, DialerConnectTimeout)
 	defer cancel()
 
-	return client.ConnectWithDialer(timeoutCtx, "", addr, b.cfg.User, b.cfg.Password,
+	password := b.cfg.Password
+	if b.cfg.PasswordFunc != nil {
+		var err error
+		if password, err = b.cfg.PasswordFunc(timeoutCtx); err != nil {
+			return nil, errors.Trace(err)
+		}
+	}
+
+	return client.ConnectWithDialer(timeoutCtx, "", addr, b.cfg.User, password,
 		"", b.cfg.Dialer, func(c *client.Conn) error {
 			c.SetTLSConfig(b.cfg.TLSConfig)
 			c.SetAttributes(map[string]string{"_client_role": "binary_log_listener"})
